@@ -1,0 +1,26 @@
+{
+  "Comment": "State Machine to write and read a message on topic poc from external kafka.",
+  "StartAt": "Producer",
+  "States": {
+    "Producer": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:000000000000:function:producer",
+      "Next": "Create the consumer"
+    },
+    "Create the consumer": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:000000000000:function:create-consumer",
+      "Next": "Subscriber in the consumer"
+    },
+    "Subscriber in the consumer": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:000000000000:function:subscriber",
+      "Next": "Consumer topic poc"
+    },
+    "Consumer topic poc": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:000000000000:function:consumer",
+      "End": true
+    }
+  }
+}

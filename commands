@@ -1,0 +1,153 @@
+https://www.confluent.io/blog/getting-started-with-kafkajs/
+https://dev.to/vikasgarghb/step-functions-with-localstack-42
+
+project nodejs14
+npm init -y
+npm install --save kafkajs npm-hook-receiver @slack/webhook
+cd src/lambda/ && HOOK_SECRET=”very-secret-string” node server.js
+based on https://github.com/vikasgarghb/net-run-rate-calculator
+
+TEST:
+  #kafka KAFKA_BOOTSTRAP_SERVER=
+  criar topic:
+   docker exec -it kafka1 /usr/bin/kafka-topics --create --zookeeper zookeeper:2181 --replication-factor 1 -partitions 1 --topic poc
+   docker exec -it kafka1 /usr/bin/kafka-topics --describe --zookeeper zookeeper:2181 --topic poc 
+   docker exec -it kafka1 /usr/bin/kafka-console-producer --broker-list kafka1:9092 --topic poc 
+   docker exec -it kafka1 /usr/bin/kafka-console-consumer --from-beginning --bootstrap-server kafka1:9092 --topic poc 
+   docker exec -it kafka1 /usr/bin/kafka-topics --list --zookeeper zookeeper:2181 
+
+   
+
+
+manual by docker, simples test:
+   docker run -d  --net=host --name=kafka-rest  -e KAFKA_REST_ZOOKEEPER_CONNECT=localhost:32181 \
+  -e KAFKA_REST_LISTENERS=http://localhost:8082   -e KAFKA_REST_SCHEMA_REGISTRY_URL=http://localhost:8081 \
+  -e KAFKA_REST_BOOTSTRAP_SERVERS=localhost:9092   confluentinc/cp-kafka-rest:7.0.1
+
+
+check if rest-proxy is started already:
+   | grep "Server started, listening for requests"
+
+  
+
+ deploy lambda:
+  1) Consumer:
+   zip -r ./consumer.zip ./consumer.js
+   [aws --endpoint-url http://localhost:4566]
+   awslocal lambda create-function  --function-name ConsumerFunction3  --runtime nodejs12.x  --handler consumer.handler    --role fake --zip-file fileb://consumer.zip  --region ue-east-2
+  response:
+  {
+    "FunctionName": "ConsumerFunction",
+    "FunctionArn": "arn:aws:lambda:us-east-2:000000000000:function:ConsumerFunction",
+    "Runtime": "nodejs12.x",
+    "Role": "fake",
+    "Handler": "consumer.handler",
+
+    "CodeSize": 504,
+    "Description": "",
+    "Timeout": 3,
+    "LastModified": "2022-03-15T19:31:51.782+0000",
+    "CodeSha256": "etZYpGMe3qhyDV0V/QOpY1KwPO98KQDIGaeoJSrAyBw=",
+    "Version": "$LATEST",
+    "VpcConfig": {},
+    "TracingConfig": {
+        "Mode": "PassThrough"
+    },
+    "RevisionId": "b02e97af-abba-47ee-a7e1-cb8c4a6934e7",
+    "State": "Active",
+    "LastUpdateStatus": "Successful",
+    "PackageType": "Zip"
+}
+
+[aws --endpoint-url http://localhost:4566]
+awslocal lambda update-function-code  --function-name ConsumerFunction3  --zip-file fileb://consumer.zip  --region ue-east-2 
+--region us-east-2
+
+
+2) Producer:
+  2.1) zip -r ./producer.zip ./producer.js
+  2.2) [aws --endpoint-url http://localhost:4566]
+  awslocal lambda create-function  --function-name ProducerFunction  --runtime nodejs12.x  --handler producer.handler    --role fake --zip-file fileb://producer.zip --region us-east-2
+response:
+{
+    "FunctionName": "ProducerFunction",
+    "FunctionArn": "arn:aws:lambda:us-east-2:000000000000:function:ProducerFunction",
+    "Runtime": "nodejs12.x",
+    "Role": "fake",
+    "Handler": "producer.handler",
+    "CodeSize": 455,
+    "Description": "",
+    "Timeout": 3,
+    "LastModified": "2022-03-15T19:33:54.125+0000",
+    "CodeSha256": "h0Azq62cl5HMsmSy+ehpdamo6IcwDsulkSzWLtBsVRU=",
+    "Version": "$LATEST",
+    "VpcConfig": {},
+    "TracingConfig": {
+        "Mode": "PassThrough"
+    },
+    "RevisionId": "113d4fff-cae0-4c3c-aef3-c9bf3c87cefc",
+    "State": "Active",
+    "LastUpdateStatus": "Successful",
+    "PackageType": "Zip"
+}
+
+
+3)create of state machine:
+3.1)
+aws stepfunctions  --endpoint http://localhost:8083  create-state-machine  --definition file://state-machine.json  --name "LocalRunKafkaLamdas3"   --role-arn arn:aws:iam::012345678901:role/DummyRole --region ue-east-2
+
+{
+    "stateMachineArn": "arn:aws:states:us-east-1:123456789012:stateMachine:LocalRunKafkaLamdas",
+    "creationDate": 1647373052.899
+}
+
+4)execution:
+
+aws stepfunctions  --endpoint http://localhost:8083   start-execution  --state-machine arn:aws:states:us-east-1:123456789012:stateMachine:LocalRunKafkaLamdas2   --name test --region us-east-2
+
+{
+    "executionArn": "arn:aws:states:us-east-1:123456789012:execution:LocalRunKafkaLamdas:test",
+    "startDate": 1647373162.407
+}
+
+5)check execution:
+
+aws stepfunctions  --endpoint http://localhost:8083   describe-execution   --execution-arn arn:aws:states:us-east-1:123456789012:stateMachine:LocalRunKafkaLamdas3 --region ue-east-2
+
+
+invoke lambda for testing
+aws   --endpoint http://localhost:4566 lambda invoke --function-name arn:aws:lambda:us-east-2:000000000000:function:ProducerFunction2  out --log-type Tail --region us-east-2
+
+
+check functions available:
+--region ue-east-2
+ --endpoint-url http://localhost:4566
+awslocal lambda list-functions  
+logs:
+[aws --endpoint=http://localhost:4566]
+awslocal logs describe-log-groups
+
+[aws --endpoint http://localhost:4566]
+awslocal lambda get-function --function-name Producer2
+
+
+******
+case of file state-machine.json (./src/state-machine/state-machine.json):
+0) docker-compose up -d --build
+1) create the zip:
+  cd src/lambda  && zip -r ./producer.zip ./
+
+2) create the functions:
+awslocal lambda create-function  --function-name subscriber  --runtime nodejs14.x  --handler /rest-api-kafka-proxy/consumer-subscriber.handler --role fake --zip-file fileb://producer.zip 
+awslocal lambda create-function  --function-name create-consumer  --runtime nodejs14.x  --handler /rest-api-kafka-proxy/consumer-create.handler --role fake --zip-file fileb://producer.zip 
+awslocal lambda create-function  --function-name consumer  --runtime nodejs14.x  --handler /rest-api-kafka-proxy/consumer-API.handler --role fake --zip-file fileb://producer.zip 
+awslocal lambda create-function  --function-name producer  --runtime nodejs14.x  --handler /rest-api-kafka-proxy/producer-API.handler --role fake --zip-file fileb://producer.zip 
+
+3) state machine
+cd ../state-machine
+aws stepfunctions  --endpoint http://localhost:8083  create-state-machine  --definition file://state-machine.json  --name "Localkafka"   --role-arn arn:aws:iam::012345678901:role/DummyRole 
+aws stepfunctions  --endpoint http://localhost:8083   start-execution  --state-machine arn:aws:states:us-east-1:123456789012:stateMachine:Localkafka  --name poc
+aws stepfunctions  --endpoint http://localhost:8083   describe-execution   --execution-arn arn:aws:states:us-east-1:123456789012:execution:Localkafka:poc
+
+4) check execution logs:
+awslocal logs describe-log-groups

@@ -1,0 +1,97 @@
+version: '3.7'
+
+services:
+  localstack:
+    image: localstack/localstack
+    environment:
+      - DATA_DIR=/tmp/localstack/data
+      - SERVICES=${SERVICES- }
+      - DEBUG=1
+      - DATA_DIR=${DATA_DIR- }
+      - LAMBDA_EXECUTOR=local
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - LOCALSTACK_API_KEY=${LOCALSTACK_API_KEY- }
+      - HOSTNAME_EXTERNAL=localstack
+      - HOST_TMP_FOLDER=/tmp
+      - LAMBDA_REMOTE_DOCKER=false
+      - LAMBDA_DOCKER_NETWORK=localstack
+    ports:
+      - "127.0.0.1:4566:4566"
+      - 443:443
+    volumes:
+      - /tmp/localstack:/tmp/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - localstack
+
+  stepfunctions:
+    container_name: stepfunctions
+    image: amazon/aws-stepfunctions-local:latest
+    environment:
+      - LAMBDA_ENDPOINT=http://localstack:4566
+    ports:
+      - '8083:8083'
+    networks:
+      - localstack
+
+  zookeeper:
+    image: zookeeper:3.4.9
+    container_name: zookeeper
+    hostname: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOO_MY_ID: 1
+      ZOO_PORT: 2181
+      ZOO_SERVERS: server.1=zookeeper:2888:3888
+    volumes:
+      - ./kafka-data/zoo1/data:/var/lib/zookeeper/data
+      - ./kafka-data/zoo1/datalog:/datalog
+    networks:
+      - localstack
+
+  kafka1:
+    image: confluentinc/cp-kafka:5.4.0
+    container_name: kafka1
+    hostname: kafka1
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_ADVERTISED_LISTENERS: LISTENER_DOCKER_INTERNAL://kafka1:29092,LISTENER_DOCKER_EXTERNAL://localhost:9092
+      # Both internal and external listeners use the PLAINTEXT protocol
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: LISTENER_DOCKER_INTERNAL:PLAINTEXT,LISTENER_DOCKER_EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: LISTENER_DOCKER_INTERNAL
+      KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
+      KAFKA_BROKER_ID: 1
+      KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    volumes:
+      - ./kafka-data/kafka1/data:/var/lib/kafka/data
+    depends_on:
+      - zookeeper
+    networks:
+      - localstack
+
+ 
+  rest-proxy:
+    image: confluentinc/cp-kafka-rest:6.1.1
+    ports:
+      - 8084:8084
+    hostname: rest-proxy
+    container_name: rest-proxy
+    depends_on:
+      - zookeeper
+      - kafka1
+    environment:
+      KAFKA_REST_HOST_NAME: rest-proxy
+      KAFKA_REST_LISTENERS: "http://0.0.0.0:8084"
+      KAFKA_REST_BOOTSTRAP_SERVERS: kafka1:29092
+      KAFKA_REST_SASL_MECHANISM: "PLAIN"
+      KAFKA_REST_CLIENT_SASL_MECHANISM: "PLAIN"
+    networks:
+      - localstack
+
+networks:
+  localstack:
+    external: false
+    driver: bridge
